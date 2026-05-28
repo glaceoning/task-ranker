@@ -1,0 +1,22 @@
+{
+  "name": "favorite-tasks-picker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build --base=./",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run --environment node"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "papaparse": "^5.4.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.11"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.4"
+  }
+}
