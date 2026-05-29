@@ -5,6 +5,7 @@ import {
   ArrowUp,
   Check,
   ChevronRight,
+  Columns3,
   Download,
   FileInput,
   HelpCircle,
@@ -14,6 +15,7 @@ import {
   Settings2,
   ShieldCheck,
   Shuffle,
+  SlidersHorizontal,
   Upload,
   X,
 } from 'lucide-react';
@@ -41,6 +43,13 @@ const DEFAULT_OPTIONS = {
   visibleColumns: [],
   search: '',
 };
+
+const WORKFLOW_STEPS = [
+  { id: 'empty', label: 'CSV' },
+  { id: 'preview', label: 'Setup' },
+  { id: 'picking', label: 'Picking' },
+  { id: 'export', label: 'Export' },
+];
 
 function createSession({ sourceFileName, columns, tasks, options = {} }) {
   const mergedOptions = {
@@ -245,155 +254,199 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-mark">
-            <ShieldCheck size={20} aria-hidden="true" />
-          </div>
-          <div>
-            <h1>Favorite Tasks Picker</h1>
-            <p>{session ? session.sourceFileName : 'Private CSV ranking in your browser'}</p>
-          </div>
-        </div>
-        <div className="topbar-actions">
-          <button className="ghost-button" type="button" onClick={() => importInputRef.current?.click()}>
-            <FileInput size={17} aria-hidden="true" />
-            Import session
-          </button>
-          <input
-            ref={importInputRef}
-            className="sr-only"
-            type="file"
-            accept="application/json,.json"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) handleImportFile(file);
-              event.target.value = '';
-            }}
-          />
-          {session && (
-            <button className="ghost-button danger" type="button" onClick={clearSession}>
-              <X size={17} aria-hidden="true" />
-              New CSV
-            </button>
+    <div className={`app-shell stage-${stage}`}>
+      <input
+        ref={importInputRef}
+        className="sr-only"
+        type="file"
+        accept="application/json,.json"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) handleImportFile(file);
+          event.target.value = '';
+        }}
+      />
+      <CommandBar
+        session={session}
+        onImport={() => importInputRef.current?.click()}
+        onClear={clearSession}
+      />
+      <div className="workbench-shell">
+        <WorkflowRail stage={stage} session={session} />
+        <div className="surface-stack">
+          {notice && <Notice message={notice} />}
+
+          {stage === 'empty' && (
+            <UploadScreen onFile={handleCsvFile} onImport={() => importInputRef.current?.click()} />
+          )}
+
+          {stage === 'preview' && session && (
+            <PreviewScreen
+              session={session}
+              onFile={handleCsvFile}
+              onStart={startPicking}
+              updateOptions={updateOptions}
+            />
+          )}
+
+          {stage === 'picking' && session && (
+            <main className={`workspace density-${session.options.density}`}>
+              <PickerPanel
+                batch={currentBatch}
+                session={session}
+                selectedIds={selectedIds}
+                setSelectedIds={setSelectedIds}
+                onPick={pickBatch}
+                onPass={passBatch}
+              />
+              <aside className="right-dock">
+                <DockTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+                {activeTab === 'favorites' ? (
+                  <FavoritesPanel
+                    session={session}
+                    rankedTasks={rankedTasks}
+                    taskMap={taskMap}
+                    rescueOpen={rescueOpen}
+                    setRescueOpen={setRescueOpen}
+                    onMove={moveFavorite}
+                    onRescue={rescue}
+                  />
+                ) : (
+                  <OptionsPanel
+                    session={session}
+                    updateOptions={updateOptions}
+                    onRestart={restartPicker}
+                    onExportFavorites={() => exportFavoritesCsv(session)}
+                    onExportSession={() => exportSessionJson(session)}
+                    onImport={() => importInputRef.current?.click()}
+                  />
+                )}
+              </aside>
+            </main>
           )}
         </div>
-      </header>
-
-      {notice && <div className="notice">{notice}</div>}
-
-      {stage === 'empty' && <UploadScreen onFile={handleCsvFile} />}
-
-      {stage === 'preview' && session && (
-        <PreviewScreen
-          session={session}
-          onFile={handleCsvFile}
-          onStart={startPicking}
-          updateOptions={updateOptions}
-        />
-      )}
-
-      {stage === 'picking' && session && (
-        <main className={`workspace density-${session.options.density}`}>
-          <PickerPanel
-            batch={currentBatch}
-            session={session}
-            selectedIds={selectedIds}
-            setSelectedIds={setSelectedIds}
-            onPick={pickBatch}
-            onPass={passBatch}
-          />
-          <aside className="side-panel">
-            <div className="tabs" role="tablist" aria-label="Picker details">
-              <button
-                type="button"
-                className={activeTab === 'favorites' ? 'active' : ''}
-                onClick={() => setActiveTab('favorites')}
-              >
-                <Check size={16} aria-hidden="true" />
-                Found Favorites
-              </button>
-              <button
-                type="button"
-                className={activeTab === 'options' ? 'active' : ''}
-                onClick={() => setActiveTab('options')}
-              >
-                <Settings2 size={16} aria-hidden="true" />
-                Options
-              </button>
-            </div>
-            {activeTab === 'favorites' ? (
-              <FavoritesPanel
-                session={session}
-                rankedTasks={rankedTasks}
-                taskMap={taskMap}
-                rescueOpen={rescueOpen}
-                setRescueOpen={setRescueOpen}
-                onMove={moveFavorite}
-                onRescue={rescue}
-              />
-            ) : (
-              <OptionsPanel
-                session={session}
-                updateOptions={updateOptions}
-                onRestart={restartPicker}
-                onExportFavorites={() => exportFavoritesCsv(session)}
-                onExportSession={() => exportSessionJson(session)}
-                onImport={() => importInputRef.current?.click()}
-              />
-            )}
-          </aside>
-        </main>
-      )}
+      </div>
     </div>
   );
 }
 
-function UploadScreen({ onFile }) {
+function CommandBar({ session, onImport, onClear }) {
+  return (
+    <header className="command-bar">
+      <div className="brand">
+        <div className="brand-mark">
+          <ShieldCheck size={19} aria-hidden="true" />
+        </div>
+        <div className="brand-copy">
+          <h1>Favorite Tasks Picker</h1>
+          <p>{session ? session.sourceFileName : 'Private CSV ranking in your browser'}</p>
+        </div>
+      </div>
+      <div className="command-actions">
+        <button className="quiet-button" type="button" onClick={onImport}>
+          <FileInput size={17} aria-hidden="true" />
+          Import session
+        </button>
+        {session && (
+          <button className="quiet-button danger" type="button" onClick={onClear}>
+            <X size={17} aria-hidden="true" />
+            New CSV
+          </button>
+        )}
+      </div>
+    </header>
+  );
+}
+
+function WorkflowRail({ stage, session }) {
+  const activeIndex = stage === 'empty' ? 0 : stage === 'preview' ? 1 : 2;
+  const foundCount = session?.pickerState.rankedIds.length ?? 0;
+  const totalCount = session?.tasks.length ?? 0;
+
+  return (
+    <aside className="workflow-rail" aria-label="Workflow">
+      {WORKFLOW_STEPS.map((step, index) => {
+        const isActive = index === activeIndex;
+        const isComplete = index < activeIndex || (step.id === 'export' && totalCount > 0 && foundCount > 0);
+        return (
+          <div
+            className={`rail-step ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}`}
+            key={step.id}
+          >
+            <span className="rail-dot">{isComplete ? <Check size={13} aria-hidden="true" /> : index + 1}</span>
+            <span>{step.label}</span>
+          </div>
+        );
+      })}
+    </aside>
+  );
+}
+
+function Notice({ message }) {
+  return (
+    <div className="notice" role="status">
+      <span className="notice-pip" />
+      {message}
+    </div>
+  );
+}
+
+function UploadScreen({ onFile, onImport }) {
   return (
     <main className="upload-layout">
-      <section className="upload-card">
+      <section className="upload-panel">
         <div className="upload-icon">
-          <Upload size={28} aria-hidden="true" />
+          <Upload size={30} aria-hidden="true" />
         </div>
-        <h2>Load a CSV of tasks</h2>
-        <p>
-          Every row becomes one task. The picker keeps the file on this device and works with
-          whatever columns your CSV has.
-        </p>
-        <label className="primary-file-button">
-          Choose CSV
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onFile(file);
-              event.target.value = '';
-            }}
-          />
-        </label>
+        <div>
+          <h2>Load a CSV of tasks</h2>
+          <p>
+            Every row becomes one task. Files stay on this device, and the picker works with the
+            columns your CSV already has.
+          </p>
+        </div>
+        <div className="upload-actions">
+          <label className="primary-file-button">
+            Choose CSV
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) onFile(file);
+                event.target.value = '';
+              }}
+            />
+          </label>
+          <button className="quiet-button" type="button" onClick={onImport}>
+            <FileInput size={17} aria-hidden="true" />
+            Import session
+          </button>
+        </div>
+        <div className="upload-footer">
+          <span>CSV header row required</span>
+          <span>JSON sessions supported</span>
+          <span>Exports stay local</span>
+        </div>
       </section>
     </main>
   );
 }
 
 function PreviewScreen({ session, onFile, onStart, updateOptions }) {
-  const previewTasks = session.tasks.slice(0, 5);
+  const previewTasks = session.tasks.slice(0, 6);
   return (
     <main className="preview-layout">
-      <section className="preview-header">
+      <section className="preview-hero">
         <div>
-          <p className="overline">CSV loaded</p>
+          <span className="section-label">CSV loaded</span>
           <h2>{session.tasks.length} tasks ready to rank</h2>
           <p>
-            Review the columns, choose whether the first pass should split liked tasks from the
-            rest, then start picking.
+            Check the first rows, set the batch shape, then start the picker workbench.
           </p>
         </div>
         <div className="preview-actions">
-          <label className="ghost-button file-swap">
+          <label className="quiet-button file-swap">
             <Upload size={17} aria-hidden="true" />
             Replace CSV
             <input
@@ -407,27 +460,41 @@ function PreviewScreen({ session, onFile, onStart, updateOptions }) {
             />
           </label>
           <button className="primary-button" type="button" onClick={onStart}>
-            Start Picking
+            Start picking
             <ChevronRight size={18} aria-hidden="true" />
           </button>
         </div>
       </section>
 
-      <section className="preview-grid">
-        <div className="preview-table">
-          <div className="table-title">First rows</div>
-          {previewTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              columns={session.columns}
-              visibleColumns={session.columns.slice(0, 4)}
-              selected={false}
-              compact
-            />
-          ))}
+      <section className="preview-workbench">
+        <div className="preview-table-panel">
+          <div className="panel-title-row">
+            <div>
+              <span className="section-label">First rows</span>
+              <h3>{session.sourceFileName}</h3>
+            </div>
+            <span className="meta-pill">{session.columns.length} columns</span>
+          </div>
+          <div className="preview-table">
+            {previewTasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                visibleColumns={session.columns.slice(0, 4)}
+                selected={false}
+                compact
+              />
+            ))}
+          </div>
         </div>
         <div className="setup-panel">
+          <div className="panel-title-row">
+            <div>
+              <span className="section-label">Setup</span>
+              <h3>Picker controls</h3>
+            </div>
+            <SlidersHorizontal size={18} aria-hidden="true" />
+          </div>
           <label className="switch-row">
             <input
               type="checkbox"
@@ -435,13 +502,13 @@ function PreviewScreen({ session, onFile, onStart, updateOptions }) {
               onChange={(event) => updateOptions({ splitMode: event.target.checked })}
             />
             <span>
-              <strong>Split Mode first pass</strong>
-              <small>Pick every task you like in the first cycle; leave the rest aside.</small>
+              <strong>Split mode</strong>
+              <small>First pass separates liked tasks before the full ranking pass.</small>
             </span>
           </label>
           <label className="range-label">
-            Batch size
-            <span>{session.options.batchSize}</span>
+            <span>Batch size</span>
+            <strong>{session.options.batchSize}</strong>
             <input
               type="range"
               min="2"
@@ -459,7 +526,8 @@ function PreviewScreen({ session, onFile, onStart, updateOptions }) {
 function PickerPanel({ batch, session, selectedIds, setSelectedIds, onPick, onPass }) {
   const picker = session.pickerState;
   const isSplit = picker.mode === 'split';
-  const remaining = session.tasks.length - picker.rankedIds.length;
+  const remaining = Math.max(0, session.tasks.length - picker.rankedIds.length);
+  const eligibleCount = picker.currentBatchIds.length + picker.roundQueue.length;
 
   function toggle(taskId) {
     setSelectedIds((current) => {
@@ -472,21 +540,29 @@ function PickerPanel({ batch, session, selectedIds, setSelectedIds, onPick, onPa
 
   return (
     <section className="picker-panel">
-      <div className="panel-heading">
+      <div className="picker-heading">
         <div>
-          <p className="overline">{isSplit ? 'Split pass' : 'Picker group'}</p>
+          <span className="section-label">{isSplit ? 'Split pass' : 'Picker group'}</span>
           <h2>{isSplit ? 'Pick every task you like here' : 'Pick your favorites from this group'}</h2>
           <p>
             {isSplit
-              ? 'Unpicked tasks wait outside the preferred set until your favorites are found.'
+              ? 'Chosen tasks move into the preferred set before final ranking begins.'
               : 'Selected tasks stay alive; unselected tasks remember who beat them.'}
           </p>
         </div>
-        <div className="progress-card">
-          <strong>{session.pickerState.rankedIds.length}</strong>
-          <span>found</span>
-          <strong>{remaining}</strong>
-          <span>left</span>
+        <div className="status-strip" aria-label="Picker progress">
+          <span>
+            <strong>{session.pickerState.rankedIds.length}</strong>
+            found
+          </span>
+          <span>
+            <strong>{remaining}</strong>
+            left
+          </span>
+          <span>
+            <strong>{eligibleCount}</strong>
+            active
+          </span>
         </div>
       </div>
 
@@ -497,19 +573,18 @@ function PickerPanel({ batch, session, selectedIds, setSelectedIds, onPick, onPa
           <p>Export the favorites list or restart with a fresh shuffle whenever you like.</p>
         </div>
       ) : picker.mode === 'stalled' ? (
-        <div className="empty-state">
+        <div className="empty-state warning">
           <HelpCircle size={34} aria-hidden="true" />
           <h3>The picker needs a rescue.</h3>
           <p>Open Found Favorites and rescue a task so it can return to the running.</p>
         </div>
       ) : (
         <>
-          <div className="batch-grid">
+          <div className="batch-list" aria-label="Current task group">
             {batch.map((task) => (
-              <TaskCard
+              <TaskRow
                 key={task.id}
                 task={task}
-                columns={session.columns}
                 visibleColumns={session.options.visibleColumns}
                 selected={selectedIds.has(task.id)}
                 onClick={() => toggle(task.id)}
@@ -522,6 +597,10 @@ function PickerPanel({ batch, session, selectedIds, setSelectedIds, onPick, onPa
             ))}
           </div>
           <div className="picker-actions">
+            <div>
+              <strong>{selectedIds.size}</strong>
+              <span>selected in this group</span>
+            </div>
             <button
               className="primary-button"
               type="button"
@@ -529,10 +608,10 @@ function PickerPanel({ batch, session, selectedIds, setSelectedIds, onPick, onPa
               disabled={!isSplit && selectedIds.size === 0}
             >
               <Check size={18} aria-hidden="true" />
-              Pick {selectedIds.size ? selectedIds.size : ''}
+              Pick selected
             </button>
-            <button className="ghost-button" type="button" onClick={onPass}>
-              {isSplit ? 'Pass on this group' : 'Pass'}
+            <button className="quiet-button" type="button" onClick={onPass}>
+              {isSplit ? 'Pass group' : 'Pass group'}
             </button>
           </div>
         </>
@@ -541,28 +620,53 @@ function PickerPanel({ batch, session, selectedIds, setSelectedIds, onPick, onPa
   );
 }
 
-function TaskCard({ task, visibleColumns, selected, onClick, compact = false, dimmed = false }) {
+function TaskRow({ task, visibleColumns, selected, onClick, compact = false, dimmed = false }) {
   const shownColumns = visibleColumns.filter((column) => task.values[column] !== undefined);
+  const Component = onClick ? 'button' : 'article';
   return (
-    <button
-      type="button"
-      className={`task-card ${selected ? 'selected' : ''} ${compact ? 'compact' : ''} ${
+    <Component
+      type={onClick ? 'button' : undefined}
+      className={`task-row ${selected ? 'selected' : ''} ${compact ? 'compact' : ''} ${
         dimmed ? 'dimmed' : ''
       }`}
       onClick={onClick}
-      aria-pressed={selected}
+      aria-pressed={onClick ? selected : undefined}
     >
-      <span className="task-title">{task.displayName}</span>
+      <span className="select-indicator">{selected ? <Check size={15} aria-hidden="true" /> : ''}</span>
       <span className="task-row-index">Row {task.originalIndex + 1}</span>
+      <span className="task-title">{task.displayName}</span>
       <dl>
         {shownColumns.map((column) => (
           <div key={column}>
             <dt>{column}</dt>
-            <dd>{task.values[column] || '—'}</dd>
+            <dd>{task.values[column] || '-'}</dd>
           </div>
         ))}
       </dl>
-    </button>
+    </Component>
+  );
+}
+
+function DockTabs({ activeTab, setActiveTab }) {
+  return (
+    <div className="dock-tabs" role="tablist" aria-label="Picker details">
+      <button
+        type="button"
+        className={activeTab === 'favorites' ? 'active' : ''}
+        onClick={() => setActiveTab('favorites')}
+      >
+        <Check size={16} aria-hidden="true" />
+        Found Favorites
+      </button>
+      <button
+        type="button"
+        className={activeTab === 'options' ? 'active' : ''}
+        onClick={() => setActiveTab('options')}
+      >
+        <Settings2 size={16} aria-hidden="true" />
+        Options
+      </button>
+    </div>
   );
 }
 
@@ -576,7 +680,14 @@ function FavoritesPanel({
   onRescue,
 }) {
   return (
-    <div className="panel-body">
+    <div className="dock-body">
+      <div className="dock-heading">
+        <div>
+          <span className="section-label">Ranked stack</span>
+          <h3>Found Favorites</h3>
+        </div>
+        <span className="meta-pill">{rankedTasks.length}</span>
+      </div>
       <div className="favorites-list">
         {rankedTasks.length === 0 ? (
           <div className="mini-empty">Favorites will appear here as winners are found.</div>
@@ -611,7 +722,7 @@ function FavoritesPanel({
         )}
       </div>
       <button className="link-button" type="button" onClick={() => setRescueOpen(!rescueOpen)}>
-        Click here to check what happened to a task
+        Check what happened to a task
       </button>
       {rescueOpen && <RescuePanel session={session} taskMap={taskMap} onRescue={onRescue} />}
     </div>
@@ -676,10 +787,18 @@ function OptionsPanel({
 }) {
   const hasStarted = session.pickerState.rankedIds.length > 0 || session.pickerState.mode !== 'split';
   return (
-    <div className="panel-body options-stack">
+    <div className="dock-body options-stack">
+      <div className="dock-heading">
+        <div>
+          <span className="section-label">Session controls</span>
+          <h3>Options</h3>
+        </div>
+        <Settings2 size={18} aria-hidden="true" />
+      </div>
+
       <label className="range-label">
-        Batch size
-        <span>{session.options.batchSize}</span>
+        <span>Batch size</span>
+        <strong>{session.options.batchSize}</strong>
         <input
           type="range"
           min="2"
@@ -697,13 +816,13 @@ function OptionsPanel({
           onChange={(event) => updateOptions({ splitMode: event.target.checked })}
         />
         <span>
-          <strong>Split Mode first pass</strong>
+          <strong>Split mode</strong>
           <small>Available before restarting the picker.</small>
         </span>
       </label>
 
       <label className="select-label">
-        Focus filter
+        <span>Focus filter</span>
         <input
           value={session.options.search}
           onChange={(event) => updateOptions({ search: event.target.value })}
@@ -712,7 +831,7 @@ function OptionsPanel({
       </label>
 
       <label className="select-label">
-        Density
+        <span>Density</span>
         <select
           value={session.options.density}
           onChange={(event) => updateOptions({ density: event.target.value })}
@@ -723,7 +842,10 @@ function OptionsPanel({
       </label>
 
       <fieldset className="columns-fieldset">
-        <legend>Visible columns</legend>
+        <legend>
+          <Columns3 size={15} aria-hidden="true" />
+          Visible columns
+        </legend>
         {session.columns.map((column) => (
           <label key={column}>
             <input
@@ -742,23 +864,23 @@ function OptionsPanel({
       </fieldset>
 
       <div className="button-grid">
-        <button className="ghost-button" type="button" onClick={() => onRestart({ shuffle: false })}>
+        <button className="quiet-button" type="button" onClick={() => onRestart({ shuffle: false })}>
           <ListRestart size={17} aria-hidden="true" />
           Restart
         </button>
-        <button className="ghost-button" type="button" onClick={() => onRestart({ shuffle: true })}>
+        <button className="quiet-button" type="button" onClick={() => onRestart({ shuffle: true })}>
           <Shuffle size={17} aria-hidden="true" />
           Shuffle restart
         </button>
-        <button className="ghost-button" type="button" onClick={onExportFavorites}>
+        <button className="quiet-button" type="button" onClick={onExportFavorites}>
           <Download size={17} aria-hidden="true" />
           Export favorites CSV
         </button>
-        <button className="ghost-button" type="button" onClick={onExportSession}>
+        <button className="quiet-button" type="button" onClick={onExportSession}>
           <PanelRight size={17} aria-hidden="true" />
           Export session JSON
         </button>
-        <button className="ghost-button" type="button" onClick={onImport}>
+        <button className="quiet-button" type="button" onClick={onImport}>
           <FileInput size={17} aria-hidden="true" />
           Import session JSON
         </button>
